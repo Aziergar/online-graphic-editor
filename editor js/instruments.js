@@ -25,10 +25,179 @@ class Color
                          Math.round(this.g * ratio + 255 * (1 - ratio)),
                          Math.round(this.b * ratio + 255 * (1 - ratio)), 255);
     }
+
+    stringify()
+    {
+        return "rgba(" + this.r.toString() + ", " + this.g.toString() + ", " + this.b.toString() + ", " + this.a.toString() + ")";
+    }
 }
 
 let black = new Color(0, 0, 0);
 let white = new Color(255, 255, 255);
+
+class Canvas
+{
+    setup(divID, _width, _height, color = white)
+    {
+        this.color = color;
+        this.drawn = false;
+        this.canvasParent = createDiv();
+        this.canvasParent.parent(divID);
+        this.canvasParent.size(_width, _height);
+        this.canvasParent.style("overflow: hidden");
+        this.canvas = createCanvas(_width, _height);
+        this.outerLayer = createGraphics(_width, _height);
+        this.zoom = { zoom : 1, zoomX : 0, zoomY : 0, delta : 0, zoomSensitivity : 0.001, zoomMin : 0.1, zoomMax : Math.max(_width, _height) / 25};
+        this.translate = { x : 0, y : 0};
+        this.origin = { x : 0, y : 0};
+        this.layers = [this.canvas, this.outerLayer];
+        this.layers.forEach(layer =>
+        {
+            layer.parent(this.canvasParent);
+            layer.position(0, 0, "absolute");
+            layer.show();
+        });
+        this.layers = [this.canvasParent];
+        this.canvasRect = this.canvas.elt.getBoundingClientRect();
+        background(color.r, color.g, color.b, color.a);
+        this.instruments = [new SelectImage("SelectImage", this.outerLayer),
+                            new Text("Text", this.outerLayer),
+                            new Marker("Marker", new Thickness(1, 5), new Color(0, 0, 0, 255)), 
+                            new Fill("Fill", 0.3), 
+                            new Pencil("Pencil", new Thickness(1, 5), new Color(0, 0, 0, 255)),
+                            new Eraser("Eraser", new Thickness(10, 100))];
+        this.setInstrument("Marker");
+        this.canvas.loadPixels();
+    }
+
+    addLayer(element)
+    {
+        this.layers.push(element);
+        element.parent(this.canvasParent);
+        this.layers = [this.canvasParent];
+    }
+
+    applyLayersStyle(style)
+    {
+        this.layers.forEach(layer =>
+        {
+            layer.style(style);
+        });
+    }
+
+    setOrigin(x, y)
+    {
+        this.origin.x = x;
+        this.origin.y = y;
+        this.layers.forEach(layer =>
+        {
+                layer.style("transform-origin: " + (x - layer.position().x).toString() + "px " + (y - layer.position().y).toString() + "px;");
+        });
+    }
+
+    setTranslate(x, y)
+    {
+        this.translate.x = x;
+        this.translate.y = y;
+        this.applyLayersStyle("translate: " + x.toString() + "px " + y.toString() + "px;");
+    }
+
+    addTranslate(x, y)
+    {
+        this.translate.x += x;
+        this.translate.y += y;
+        this.setTranslate(this.translate.x, this.translate.y);
+    }
+
+    setZoom(zoom)
+    {
+        this.zoom.zoom = zoom;
+        this.applyLayersStyle("scale: " + zoom.toString() + ";");
+    }
+
+    zoomByMouseWheel(event)
+    {
+        let mouse = canvas.getMouseByEvent(event);
+    
+        this.addTranslate((mouse.x - this.zoom.zoomX) * (this.zoom.zoom - 1), (mouse.y - this.zoom.zoomY) * (this.zoom.zoom - 1));
+
+        this.zoom.zoomX = mouse.x;
+        this.zoom.zoomY = mouse.y;
+        this.setOrigin(this.zoom.zoomX, this.zoom.zoomY);
+
+        this.zoom.delta = event.delta * this.zoom.zoomSensitivity * this.zoom.zoom;
+        this.zoom.zoom -= this.zoom.delta;
+        this.zoom.zoom = constrain(this.zoom.zoom, this.zoom.zoomMin, this.zoom.zoomMax);
+        this.setZoom(this.zoom.zoom);
+    }
+
+    getMouseByEvent(event)
+    {
+        this.canvasRect = this.canvas.elt.getBoundingClientRect();
+        return {x : (event.clientX - this.canvasRect.left) / this.zoom.zoom, y : (event.clientY - this.canvasRect.top) / this.zoom.zoom };
+    }
+
+    getMouse()
+    {
+        return { x : mouseX / this.zoom.zoom, y : mouseY / this.zoom.zoom };
+    }
+
+    getMouseConstrained()
+    {
+        let mouse = this.getMouse();
+        return {x : constrain(mouse.x, 0, width), y : constrain(mouse.y, 0, height)};
+    }
+
+    getPMouse()
+    {
+        return { x : pmouseX / this.zoom.zoom, y : pmouseY / this.zoom.zoom };
+    }
+
+    getMouseDelta()
+    {
+        let mouse = this.getMouse();
+        let pMouse = this.getPMouse();
+        return {x : mouse.x - pMouse.x, y : mouse.y - pMouse.y};
+    }
+
+    getMouseDeltaByEvent(event)
+    {
+        return {x : event.movementX / this.zoom.zoom, y : event.movementY / this.zoom.zoom};
+    }
+
+    setInstrument(name)
+    {
+        this.instruments.forEach(instrument =>
+        {
+            if(instrument.name == name) 
+            {
+                this.instrument = instrument;
+            }
+        });
+    }
+
+    mouseInCanvas()
+    {
+        let rect = this.canvasParent.elt.getBoundingClientRect();
+        let parentRect = this.canvasParent.parent().getBoundingClientRect();
+        let dy = Math.min(0, (rect.top - parentRect.top) / this.zoom.zoom);
+        let dY = Math.max(0, (rect.bottom - parentRect.bottom) / this.zoom.zoom);
+        let dx = Math.min(0, (rect.left - parentRect.left) / this.zoom.zoom);
+        let dX = Math.max(0, (rect.right - parentRect.right) / this.zoom.zoom);
+        let mouse = this.getMouse();
+        return (mouse.x + dx >= 0 && mouse.x + dX <= width && mouse.y + dy >= 0 && mouse.y + dY <= height);
+    }
+
+    drawCheck()
+    {
+        if(!mouseIsPressed) return false;
+        if(mouseButton != LEFT) return false;
+        if(!this.mouseInCanvas()) return false;
+        return true;
+    }
+}
+
+let canvas = new Canvas();
 
 class Thickness
 {
@@ -234,12 +403,30 @@ class Select extends Instrument
 {
     constructor(name, layer)
     {
-        super(name, new Thickness(0, 0, 0));
+        super(name, new Thickness(0, 0, 0), canvas.color);
         this.layer = layer;
         this.point1 = null;
         this.point2 = null;
         this.area = new DashedLine(layer);
         this.selected = false;
+        this.movePositions = ["INSIDE", "LEFT", "RIGHT", "TOP", "BOTTOM"];
+        this.scalePositions = ["LEFT-CENTER", "RIGHT-CENTER", "TOP-CENTER", "BOTTOM-CENTER", "LEFT-TOP", "RIGHT-TOP", "LEFT-BOTTOM", "RIGHT-BOTTOM"];
+    }
+
+    onSelect()
+    {
+        this.img = new Img(this.point1, this.point2, this.color);
+    }
+    onDeselect() {}
+    onFlip() {}
+    onDraw()
+    {
+        let rect = this.img.getRect(this.point1, this.point2);
+        this.img.x = rect.x;
+        this.img.y = rect.y;
+        this.img.w = rect.w;
+        this.img.h = rect.h;
+        this.img.drawn = true;
     }
 
     mouseDragged(event)
@@ -253,12 +440,12 @@ class Select extends Instrument
         {
             let mouseDelta = canvas.getMouseDeltaByEvent(event);
             mouseDelta = createVector(mouseDelta.x, mouseDelta.y);
-            if(this.dragPosition == "INSIDE")
+            if(this.movePositions.includes(this.dragPosition))
             {
                 this.point1.add(mouseDelta);
                 this.point2.add(mouseDelta);       
             }
-            else 
+            else if(this.scalePositions.includes(this.dragPosition))
             {
                 let dragPositions = [["RIGHT", "LEFT"], ["BOTTOM", "TOP"]];
                 let sizes = [this.img.w, this.img.h];
@@ -273,7 +460,7 @@ class Select extends Instrument
                             {
                                 this.dragPosition = this.dragPosition.replace(dragPositions[i][j], 
                                     dragPositions[i][(j + 1) % dragPositions[i].length]);
-                                this.img.flip(axes[i]);
+                                this.onFlip(axes[i]);
                             }
                     }
                 }
@@ -288,7 +475,7 @@ class Select extends Instrument
     {
         if(!this.img || !this.img.mouseOver())
         {
-            if(this.img) this.img.draw(canvas.canvas, this.point1, this.point2);
+            if(this.img) this.onDeselect();
             this.selected = false;
             let mouse = canvas.getMouseConstrained();
             this.point1 = createVector(mouse.x, mouse.y);
@@ -305,18 +492,13 @@ class Select extends Instrument
             let mouse = canvas.getMouseConstrained();
             this.point2 = createVector(mouse.x, mouse.y);
             if(this.point1.x == this.point2.x || this.point1.y == this.point2.y) this.selected = false;
-            else 
-            {
-                this.img = new Img(this.point1, this.point2, canvas.canvas);
-                let img = new Img(this.point1, this.point2, canvas.color);
-                img.draw(canvas.canvas, this.point1, this.point2);
-            }
+            else this.onSelect();
         }
     }
 
     use()
     {
-        if(!this.selected || this.img.mouseOver() == "INSIDE")
+        if(!this.selected)
         {
             let mouse = canvas.getMouseConstrained();
             this.area.drawRect(this.point1, createVector(mouse.x, mouse.y));
@@ -327,10 +509,127 @@ class Select extends Instrument
     {
         if(this.selected)
         {
-            this.img.draw(this.layer, this.point1, this.point2);
+            this.onDraw();
             this.area.patternOffset += deltaTime / 40;
             this.area.drawRect(this.point1, this.point2);
+            this.layer.push();
+            this.layer.rectMode(CENTER);
+            this.layer.stroke(0);
+            this.layer.strokeWeight(constrain(1 / canvas.zoom.zoom, 1, 100));
+            this.layer.fill(color(255, 255, 255, 100));
+            let width = constrain(10 / canvas.zoom.zoom, 4, 100);
+            this.layer.rect(this.img.x, this.img.y, width);
+            this.layer.rect(this.img.x, this.img.y + this.img.h, width);
+            this.layer.rect(this.img.x + this.img.w, this.img.y, width);
+            this.layer.rect(this.img.x + this.img.w, this.img.y + this.img.h, width);
+            this.layer.rect(this.img.x, this.img.y + this.img.h / 2, width);
+            this.layer.rect(this.img.x + this.img.w / 2, this.img.y, width);
+            this.layer.rect(this.img.x + this.img.w, this.img.y + this.img.h / 2, width);
+            this.layer.rect(this.img.x + this.img.w / 2, this.img.y + this.img.h, width);
+            this.layer.pop();
         }
+    }
+}
+
+class SelectImage extends Select
+{
+    onSelect()
+    {
+        this.img = new Img(this.point1, this.point2, canvas.canvas);
+        let img = new Img(this.point1, this.point2, this.color);
+        img.draw(canvas.canvas, this.point1, this.point2);
+    }
+
+    onDeselect()
+    {
+        this.img.draw(canvas.canvas, this.point1, this.point2);
+    }
+
+    onFlip(axis)
+    {
+        this.img.flip(axis);
+    }
+
+    onDraw()
+    {
+        this.img.draw(this.layer, this.point1, this.point2);
+    }
+}
+
+class Text extends Select
+{
+    constructor(name, layer, color = black, bold = false, italic = false, fontSize = 14, font = "Arial")
+    {
+        super(name, layer);
+        this.style = NORMAL;
+        if(bold && italic) this.style = BOLDITALIC;
+        else if(bold) this.style = BOLD;
+        else if(italic) this.style = ITALIC;
+        this.fontSize = fontSize;
+        this.fontColor = color;
+        this.font = font;
+        this.movePositions = ["LEFT", "RIGHT", "TOP", "BOTTOM"];
+        this.textArea = createElement("textarea");
+        canvas.addLayer(this.textArea);
+        this.textArea.style("background: transparent");
+        this.textArea.style("border: none");
+        this.textArea.style("outline: none");
+        this.textArea.style("resize: none");
+        this.textArea.style("overflow: hidden");
+        this.textArea.style("font-size", fontSize);
+        this.textArea.style("font-family", font);
+        this.textArea.style("color: " + this.fontColor.stringify());
+        this.textArea.style("font-style:", italic ? "italic" : "normal");
+        this.textArea.style("font-weight:", bold ? "bold" : "normal");
+        this.textArea.hide();
+    }
+
+    onSelect()
+    {
+        super.onSelect();
+        this.textArea.show();
+    }
+
+    onDeselect()
+    {
+        push();
+        textSize(this.fontSize);
+        textFont(this.font);
+        textStyle(this.style);
+        textWrap(WORD);
+        fill(color(this.fontColor.r, this.fontColor.g, this.fontColor.b, this.fontColor.a));
+        strokeWeight(0);
+        let dx = parseFloat(this.textArea.style("padding"));
+        let dy = dx + 2;
+        let content = this.textArea.value();
+        let line = "";
+        let dh = 0;
+        for(let i = 0; i <= content.length; i++)
+        {
+            let wrap = false;
+            if(textWidth(line.slice(line.lastIndexOf(" "))) > this.img.w - dx * 2) wrap = true;
+            if(i == content.length || content[i] == "\n" || wrap)
+            {
+                text(line, this.img.x + dx, this.img.y + dy + dh, this.img.w, this.img.h - dh);
+                dh += this.fontSize;
+                line = "";
+                if(wrap && i < content.length) line += content[i];
+            }
+            else line += content[i];
+        }
+        pop();
+        this.textArea.hide();
+        this.textArea.value("");
+    }
+
+    onDraw()
+    {
+        super.onDraw();
+        this.textArea.position(this.img.x, this.img.y);
+        let h = this.textArea.elt.scrollHeight >= this.textArea.elt.clientHeight ? this.textArea.elt.scrollHeight : this.img.h;
+        h = Math.max(h, this.img.h);
+        h = this.img.h;
+        this.textArea.size(this.img.w, h);
     }
 }
 

@@ -115,6 +115,11 @@ function isBetween(num1, num2, num3)
     return num1 >= num2 && num1 <= num3;
 }
 
+function isSameSign(num1, num2)
+{
+    return ((num1 >= 0 && num2 >= 0) || (num1 < 0 && num2 < 0));
+}
+
 class Img
 {
     constructor(x, y, w, h, layer)
@@ -122,18 +127,13 @@ class Img
         let rect = this.getRect(x, y, w, h);
         if(!layer && !h) layer = w;
         this.img = createImage(rect.w * pixelDensity(), rect.h * pixelDensity());
-        this.resizedImg = createImage(rect.w * pixelDensity(), rect.h * pixelDensity());
         if(!layer.r) this.img.copy(layer, rect.x, rect.y, rect.w, rect.h, 0, 0, rect.w * pixelDensity(), rect.h * pixelDensity());
         else this.setColor(layer);
         this.drawn = false;
+        this.x = rect.x;
+        this.y = rect.y;
         this.w = rect.w;
         this.h = rect.h;
-        this.copyToResized();
-    }
-
-    copyToResized()
-    {
-        this.resizedImg.copy(this.img, 0, 0, this.img.width, this.img.height, 0, 0, this.resizedImg.width, this.resizedImg.height);
     }
 
     setColor(color)
@@ -151,7 +151,6 @@ class Img
                 }
             }
         this.img.updatePixels();
-        this.copyToResized();
     }
 
     getRect(x, y, w, h)
@@ -180,11 +179,7 @@ class Img
             y += h;
             h = -h;
         }
-        x = Math.trunc(x);
-        y = Math.trunc(y);
-        w = Math.trunc(w);
-        h = Math.trunc(h);
-        return {x : x, y : y, w : w, h : h};
+        return {x : Math.round(x), y : Math.round(y), w : Math.round(w), h : Math.round(h)};
     }
 
     flip(flipDirection = "X")
@@ -221,16 +216,14 @@ class Img
         this.h = rect.h;
     }
 
-    resize(newW, newH, direction = "RIGHT")
+    resize(newW, newH, direction = "RIGHT-CENTER")
     {
-        newW = Math.trunc(newW);
-        newH = Math.trunc(newH);
 
         if(direction.includes("LEFT")) this.x -= newW - this.w;
         if(direction.includes("TOP")) this.y -= newH - this.h;
 
-        if(direction == "RIGHT" || direction == "LEFT") this.w = newW;
-        else if(direction == "TOP" || direction == "BOTTOM") this.h = newH;
+        if(direction == "RIGHT-CENTER" || direction == "LEFT-CENTER") this.w = newW;
+        else if(direction == "TOP-CENTER" || direction == "BOTTOM-CENTER") this.h = newH;
         else
         {
             this.w = newW;
@@ -238,7 +231,7 @@ class Img
         }
     }
 
-    resizeByDelta(deltaX, deltaY, direction = "RIGHT", isProportional = false)
+    resizeByDelta(deltaX, deltaY, direction = "RIGHT-CENTER", isProportional = false)
     {
         if(direction.includes("LEFT")) deltaX *= -1;
         if(direction.includes("TOP")) deltaY *= -1;
@@ -295,6 +288,18 @@ class Img
                         break;
                     case "LEFT-BOTTOM":
                         dif = dist(img.x, img.y + img.h, mouse.x, mouse.y);
+                        break;
+                    case "LEFT-CENTER":
+                        dif = dist(img.x, img.y + img.h / 2, mouse.x, mouse.y);
+                        break;
+                    case "RIGHT-CENTER":
+                        dif = dist(img.x + img.w, img.y + img.h / 2, mouse.x, mouse.y);
+                        break;
+                    case "BOTTOM-CENTER":
+                        dif = dist(img.x + img.w / 2, img.y + img.h, mouse.x, mouse.y);
+                        break;
+                    case "TOP-CENTER":
+                        dif = dist(img.x + img.w / 2, img.y, mouse.x, mouse.y);
                 }
                 if(dif || isBetween(mouseButtons[0], borders[0], borders[1]))
                 {
@@ -314,6 +319,10 @@ class Img
             checkEdgeDistance("RIGHT-TOP", this);
             checkEdgeDistance("RIGHT-BOTTOM", this);
             checkEdgeDistance("LEFT-BOTTOM", this);
+            checkEdgeDistance("LEFT-CENTER", this);
+            checkEdgeDistance("RIGHT-CENTER", this);
+            checkEdgeDistance("TOP-CENTER", this);
+            checkEdgeDistance("BOTTOM-CENTER", this);
             return scaleDirection;
         }
         return null;
