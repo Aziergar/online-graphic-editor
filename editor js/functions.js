@@ -1,3 +1,8 @@
+function pseudoRandom(seed, _min, _max)
+{
+  return ((seed * 1664525 + 1013904223) % ((_max - _min) * 1000)) / 1000 + _min;
+}
+
 function getPixelColor(x, y)
 {
     x = Math.trunc(x);

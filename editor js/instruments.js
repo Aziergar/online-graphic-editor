@@ -47,17 +47,14 @@ class Canvas
         this.canvasParent.style("overflow: hidden");
         this.canvas = createCanvas(_width, _height);
         this.outerLayer = createGraphics(_width, _height);
+        this.canvas.parent(this.canvasParent);
+        this.canvas.position(0, 0, "absolute");
+        this.outerLayer.parent(this.canvasParent);
+        this.outerLayer.position(0, 0, "absolute");
+        this.outerLayer.show();
         this.zoom = { zoom : 1, zoomX : 0, zoomY : 0, delta : 0, zoomSensitivity : 0.001, zoomMin : 0.1, zoomMax : Math.max(_width, _height) / 25};
         this.translate = { x : 0, y : 0};
         this.origin = { x : 0, y : 0};
-        this.layers = [this.canvas, this.outerLayer];
-        this.layers.forEach(layer =>
-        {
-            layer.parent(this.canvasParent);
-            layer.position(0, 0, "absolute");
-            layer.show();
-        });
-        this.layers = [this.canvasParent];
         this.canvasRect = this.canvas.elt.getBoundingClientRect();
         background(color.r, color.g, color.b, color.a);
         this.instruments = [new SelectImage("SelectImage", this.outerLayer),
@@ -65,6 +62,7 @@ class Canvas
                             new Marker("Marker", new Thickness(1, 5), new Color(0, 0, 0, 255)), 
                             new Fill("Fill", 0.3), 
                             new Pencil("Pencil", new Thickness(1, 5), new Color(0, 0, 0, 255)),
+                            new Spray("Spray", new Thickness(10, 100), new Color(0, 0, 0, 255)),
                             new Eraser("Eraser", new Thickness(10, 100))];
         this.setInstrument("Marker");
         this.canvas.loadPixels();
@@ -72,34 +70,21 @@ class Canvas
 
     addLayer(element)
     {
-        this.layers.push(element);
         element.parent(this.canvasParent);
-        this.layers = [this.canvasParent];
-    }
-
-    applyLayersStyle(style)
-    {
-        this.layers.forEach(layer =>
-        {
-            layer.style(style);
-        });
     }
 
     setOrigin(x, y)
     {
         this.origin.x = x;
         this.origin.y = y;
-        this.layers.forEach(layer =>
-        {
-                layer.style("transform-origin: " + (x - layer.position().x).toString() + "px " + (y - layer.position().y).toString() + "px;");
-        });
+        this.canvasParent.style("transform-origin: " + x.toString() + "px " + y.toString() + "px;");
     }
 
     setTranslate(x, y)
     {
         this.translate.x = x;
         this.translate.y = y;
-        this.applyLayersStyle("translate: " + x.toString() + "px " + y.toString() + "px;");
+        this.canvasParent.style("translate: " + x.toString() + "px " + y.toString() + "px;");
     }
 
     addTranslate(x, y)
@@ -112,7 +97,7 @@ class Canvas
     setZoom(zoom)
     {
         this.zoom.zoom = zoom;
-        this.applyLayersStyle("scale: " + zoom.toString() + ";");
+        this.canvasParent.style("scale: " + zoom.toString() + ";");
     }
 
     zoomByMouseWheel(event)
@@ -219,10 +204,10 @@ class Instrument
         this.thicknessRange = thickness;
     }
 
-    applyForLine(func)
+    applyForLine(func, mouse, pmouse)
     {
-        let current = createVector(canvas.getPMouse().x, canvas.getPMouse().y);
-        let end = createVector(canvas.getMouse().x, canvas.getMouse().y);
+        let current = createVector(pmouse.x, pmouse.y);
+        let end = createVector(mouse.x, mouse.y);
         let delta = p5.Vector.sub(end, current);
         delta.normalize();
         while(!current.equals(end))
@@ -234,11 +219,37 @@ class Instrument
         func(current.x, current.y, this.color, this.thickness);
     }
 
+    draw(){}
+
     mousePressed(){}
     mouseReleased(){}
     mouseDragged(event){}
 
     drawEachFrame(){}
+
+    use(data = {mouse : canvas.getMouse(), pmouse : canvas.getPMouse()})
+    {
+        this.applyForLine(this.draw, data.mouse, data.pmouse);
+        this.data = data;
+        return JSON.stringify(this);
+    }
+
+    applyData(instrumentData)
+    {
+        this.name = instrumentData.name;
+        this.thicknessRange = instrumentData.thicknessRange;
+        this.thickness = instrumentData.thickness;
+        this.color = instrumentData.color;
+    }
+
+    useData(data, instrument)
+    {
+        let instrumentData = JSON.parse(data);
+        instrumentData.color = new Color(instrumentData.color.r, instrumentData.color.g, instrumentData.color.b, instrumentData.color.a);
+        instrument.applyData(instrumentData);
+        instrument.use(instrumentData.data);
+        return instrument;
+    }
 }
 
 class Pencil extends Instrument
@@ -281,11 +292,6 @@ class Pencil extends Instrument
         }
         else pasteArea(0, 0, thickness * d, thickness * d, area);
     }
-
-    use()
-    {
-        this.applyForLine(this.draw);
-    }
 }
 
 class Eraser extends Pencil
@@ -298,11 +304,15 @@ class Eraser extends Pencil
 
 class Marker extends Instrument
 {
-    use()
+    use(data = {mouse : canvas.getMouse(), pmouse : canvas.getPMouse()})
     {
+        push();
         strokeWeight(this.thickness);
         stroke(color(this.color.r, this.color.g, this.color.b, this.color.a));
-        line(canvas.getPMouse().x, canvas.getPMouse().y, canvas.getMouse().x, canvas.getMouse().y);
+        line(data.pmouse.x, data.pmouse.y, data.mouse.x, data.mouse.y);
+        pop();
+        this.data = data;
+        return JSON.stringify(this);
     }
 }
 
@@ -389,13 +399,56 @@ class Fill extends Instrument
         }
     }
 
-    use()
+    applyData(instrumentData)
+    {
+        super.applyData(instrumentData);
+        this.deviation = instrumentData.deviation;
+    }
+
+    use(data = {mouse : canvas.getMouse()})
     {
         loadPixels();
-        this.baseColor = getPixelColor(canvas.getMouse().x * pixelDensity(), canvas.getMouse().y * pixelDensity());
+        this.baseColor = getPixelColor(data.mouse.x * pixelDensity(), data.mouse.y * pixelDensity());
         if(this.baseColor.isEqual(this.color, this.deviation)) return;
-        this.fillByLines(canvas.getMouse().x, canvas.getMouse().y);
+        this.fillByLines(data.mouse.x, data.mouse.y);
         updatePixels();
+        this.data = data;
+        return JSON.stringify(this);
+    }
+}
+
+class Spray extends Instrument
+{
+    use(data = {mouse : canvas.getMouse(), pmouse : canvas.getPMouse(), seed : random()})
+    {
+        push();
+        strokeWeight(1);
+        let r = this.thickness / 2;
+        let rSquared = r * r;
+        let sprayDensity = r * 2;
+        let lerps = 10;
+
+        for (let i = 0; i < lerps; i++)
+        {
+            let lerpX = lerp(data.mouse.x, data.pmouse.x, i / lerps);
+            let lerpY = lerp(data.mouse.y, data.pmouse.y, i / lerps);
+            
+            for (let j = 0; j < sprayDensity; j++)
+            {
+                data.seed = pseudoRandom(data.seed, -r, r);
+                let randX = data.seed;
+                seed = pseudoRandom(data.seed, -1, 1);
+                let randY = data.seed * sqrt(rSquared - randX * randX);
+
+                let a = 255 * (1 - sqrt(pow(randX, 2) + pow(randY, 2)) / r);
+                a = min(255, a * deltaTime / (lerps * 10));
+                stroke(0, 0, 0, a);
+                point(lerpX + randX, lerpY + randY);
+            }
+        }
+        pop();
+        this.data = data;
+        return JSON.stringify(this);
     }
 }
 
@@ -665,7 +718,7 @@ class DashedLinePattern
     }
 }
 
-standartDashedLinePattern = new DashedLinePattern;
+let standartDashedLinePattern = new DashedLinePattern;
 standartDashedLinePattern.addInterval(black, 10);
 standartDashedLinePattern.addInterval(white, 10);
 

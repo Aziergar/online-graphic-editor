@@ -13,7 +13,6 @@ function setup()
 function draw()
 {
     canvas.outerLayer.clear();
-    
     if (canvas.drawCheck())
     {
         canvas.drawn = true;
