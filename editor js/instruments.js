@@ -589,6 +589,10 @@ class Select extends Instrument
         this.onDeselectCalled = data.onDeselectCalled;
         this.onSelectCalled = data.onSelectCalled;
         this.onFlipCalled = data.onFlipCalled;
+        this.img.x = data.img.x;
+        this.img.y = data.img.y;
+        this.img.w = data.img.w;
+        this.img.h = data.img.h;
     }
 
     use()
@@ -599,7 +603,13 @@ class Select extends Instrument
             this.area.drawRect(this.point1, createVector(mouse.x, mouse.y));
         }
         this.username = username;
+        let layer = this.layer;
+        let img = this.img;
+        this.layer = null;
+        this.img = {x : img.x, y : img.y, w : img.w, h : img.h};
         let data = JSON.stringify(this);
+        this.layer = layer;
+        this.img = img;
         this.onSelectCalled = false;
         this.onDeselectCalled = false;
         this.onFlipCalled = false;
@@ -671,13 +681,6 @@ class SelectImage extends Select
     onDraw()
     {
         this.img.draw(this.layer, this.point1, this.point2);
-    }
-
-    useData(instrumentData)
-    {
-        instrumentData.color = new Color(instrumentData.color.r, instrumentData.color.g, instrumentData.color.b, instrumentData.color.a);
-        this.applyData(instrumentData);
-        this.use(instrumentData.data);
     }
 }
 
