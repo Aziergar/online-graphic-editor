@@ -34,6 +34,7 @@ class Color
 
 let black = new Color(0, 0, 0);
 let white = new Color(255, 255, 255);
+let transparent = new Color(255, 255, 255, 0);
 
 class Canvas
 {
@@ -47,23 +48,40 @@ class Canvas
         this.canvasParent.style("overflow: hidden");
         this.canvas = createCanvas(_width, _height);
         this.outerLayer = createGraphics(_width, _height);
+        this.onlineLayer = createGraphics(_width, _height);
         this.canvas.parent(this.canvasParent);
         this.canvas.position(0, 0, "absolute");
         this.outerLayer.parent(this.canvasParent);
         this.outerLayer.position(0, 0, "absolute");
         this.outerLayer.show();
+        this.onlineLayer.parent(this.canvasParent);
+        this.onlineLayer.position(0, 0, "absolute");
+        this.onlineLayer.show();
         this.zoom = { zoom : 1, zoomX : 0, zoomY : 0, delta : 0, zoomSensitivity : 0.001, zoomMin : 0.1, zoomMax : Math.max(_width, _height) / 25};
         this.translate = { x : 0, y : 0};
         this.origin = { x : 0, y : 0};
         this.canvasRect = this.canvas.elt.getBoundingClientRect();
         background(color.r, color.g, color.b, color.a);
-        this.instruments = [new SelectImage("SelectImage", this.outerLayer),
+        this.instruments = [new SelectImage("SelectImage", this.outerLayer, true),
                             new Text("Text", this.outerLayer),
-                            new Marker("Marker", new Thickness(1, 5), new Color(0, 0, 0, 255)), 
-                            new Fill("Fill", 0.3), 
+                            new Marker("Marker", new Thickness(1, 5), new Color(0, 0, 0, 255)),
+                            new Fill("Fill", 0.3),
                             new Pencil("Pencil", new Thickness(1, 5), new Color(0, 0, 0, 255)),
                             new Spray("Spray", new Thickness(10, 100), new Color(0, 0, 0, 255)),
-                            new Eraser("Eraser", new Thickness(10, 100))];
+                            new Eraser("Eraser", new Thickness(10, 100)),
+                            new Line("Line", new Thickness(1, 20)),
+                            new Rect("Rect", new Thickness(1, 20)),
+                            new Ellipse("Ellipse", new Thickness(1, 20))];
+        this.dataInstruments = [new SelectImage("SelectImage"),
+                                new Text("Text"),
+                                new Marker("Marker"),
+                                new Fill("Fill"),
+                                new Pencil("Pencil"),
+                                new Spray("Spray"),
+                                new Eraser("Eraser"),
+                                new Line("Line"),
+                                new Rect("Rect"),
+                                new Ellipse("Ellipse")];
         this.setInstrument("Marker");
         this.canvas.loadPixels();
     }
@@ -103,7 +121,7 @@ class Canvas
     zoomByMouseWheel(event)
     {
         let mouse = canvas.getMouseByEvent(event);
-    
+
         this.addTranslate((mouse.x - this.zoom.zoomX) * (this.zoom.zoom - 1), (mouse.y - this.zoom.zoomY) * (this.zoom.zoom - 1));
 
         this.zoom.zoomX = mouse.x;
@@ -154,7 +172,7 @@ class Canvas
     {
         this.instruments.forEach(instrument =>
         {
-            if(instrument.name == name) 
+            if(instrument.name == name)
             {
                 this.instrument = instrument;
             }
@@ -196,7 +214,7 @@ class Thickness
 
 class Instrument
 {
-    constructor(name, thickness, color = black)
+    constructor(name, thickness = new Thickness(1, 1), color = black)
     {
         this.color = color;
         this.name = name;
@@ -242,13 +260,11 @@ class Instrument
         this.color = instrumentData.color;
     }
 
-    useData(data, instrument)
+    useData(instrumentData)
     {
-        let instrumentData = JSON.parse(data);
         instrumentData.color = new Color(instrumentData.color.r, instrumentData.color.g, instrumentData.color.b, instrumentData.color.a);
-        instrument.applyData(instrumentData);
-        instrument.use(instrumentData.data);
-        return instrument;
+        this.applyData(instrumentData);
+        this.use(instrumentData.data);
     }
 }
 
@@ -333,7 +349,7 @@ class Fill extends Instrument
             this.y = y;
             this.color = color;
         }
-    
+
         draw()
         {
             for(let x = this.x1; x <= this.x2; x++)
@@ -409,9 +425,11 @@ class Fill extends Instrument
     {
         loadPixels();
         this.baseColor = getPixelColor(data.mouse.x * pixelDensity(), data.mouse.y * pixelDensity());
-        if(this.baseColor.isEqual(this.color, this.deviation)) return;
+        if(!this.baseColor.isEqual(this.color, this.deviation))
+        {
         this.fillByLines(data.mouse.x, data.mouse.y);
         updatePixels();
+        }
         this.data = data;
         return JSON.stringify(this);
     }
@@ -432,12 +450,12 @@ class Spray extends Instrument
         {
             let lerpX = lerp(data.mouse.x, data.pmouse.x, i / lerps);
             let lerpY = lerp(data.mouse.y, data.pmouse.y, i / lerps);
-            
+
             for (let j = 0; j < sprayDensity; j++)
             {
                 data.seed = pseudoRandom(data.seed, -r, r);
                 let randX = data.seed;
-                seed = pseudoRandom(data.seed, -1, 1);
+                data.seed = pseudoRandom(data.seed, -1, 1);
                 let randY = data.seed * sqrt(rSquared - randX * randX);
 
                 let a = 255 * (1 - sqrt(pow(randX, 2) + pow(randY, 2)) / r);
@@ -454,16 +472,27 @@ class Spray extends Instrument
 
 class Select extends Instrument
 {
-    constructor(name, layer)
+    constructor(name, layer, isTransparent = false)
     {
         super(name, new Thickness(0, 0, 0), canvas.color);
         this.layer = layer;
-        this.point1 = null;
-        this.point2 = null;
+        this.isTransparent = isTransparent;
+        this.point1 = createVector(0, 0);
+        this.point2 = createVector(0, 0);
         this.area = new DashedLine(layer);
         this.selected = false;
         this.movePositions = ["INSIDE", "LEFT", "RIGHT", "TOP", "BOTTOM"];
         this.scalePositions = ["LEFT-CENTER", "RIGHT-CENTER", "TOP-CENTER", "BOTTOM-CENTER", "LEFT-TOP", "RIGHT-TOP", "LEFT-BOTTOM", "RIGHT-BOTTOM"];
+        this.onSelectCalled = false;
+        this.onDeselectCalled = false;
+        this.onSelectCalled = false;
+        this.onFlipCalled = false;
+    }
+
+    setTransparency(isTransparent)
+    {
+        this.isTransparent = isTransparent;
+        if(this.img) this.img.replaceColor(canvas.color, transparent);
     }
 
     onSelect()
@@ -496,7 +525,7 @@ class Select extends Instrument
             if(this.movePositions.includes(this.dragPosition))
             {
                 this.point1.add(mouseDelta);
-                this.point2.add(mouseDelta);       
+                this.point2.add(mouseDelta);
             }
             else if(this.scalePositions.includes(this.dragPosition))
             {
@@ -511,7 +540,7 @@ class Select extends Instrument
                         if(this.dragPosition.includes(dragPositions[i][j])
                             && sizes[i] + deltas[i] * Math.pow(-1, j) < Math.abs(deltas[i]))
                             {
-                                this.dragPosition = this.dragPosition.replace(dragPositions[i][j], 
+                                this.dragPosition = this.dragPosition.replace(dragPositions[i][j],
                                     dragPositions[i][(j + 1) % dragPositions[i].length]);
                                 this.onFlip(axes[i]);
                             }
@@ -549,6 +578,19 @@ class Select extends Instrument
         }
     }
 
+    applyData(data)
+    {
+        super.applyData(data);
+        this.point1 = createVector(data.point1.x, data.point1.y);
+        this.point2 = createVector(data.point2.x, data.point2.y);
+        this.isTransparent = data.isTransparent;
+        this.selected = data.selected;
+        this.onSelectCalled = data.onSelectCalled;
+        this.onDeselectCalled = data.onDeselectCalled;
+        this.onSelectCalled = data.onSelectCalled;
+        this.onFlipCalled = data.onFlipCalled;
+    }
+
     use()
     {
         if(!this.selected)
@@ -556,6 +598,21 @@ class Select extends Instrument
             let mouse = canvas.getMouseConstrained();
             this.area.drawRect(this.point1, createVector(mouse.x, mouse.y));
         }
+        this.username = username;
+        let data = JSON.stringify(this);
+        this.onSelectCalled = false;
+        this.onDeselectCalled = false;
+        this.onFlipCalled = false;
+        return data;
+    }
+
+    useData(data)
+    {
+        data.color = new Color(data.color.r, data.color.g, data.color.b, data.color.a);
+        this.applyData(instrumentData);
+        if(this.onSelectCalled) this.onSelect();
+        if(this.onDeselectCalled) this.onDeselect();
+        if(this.onFlipCalled) this.onFlip();
     }
 
     drawEachFrame()
@@ -564,6 +621,10 @@ class Select extends Instrument
         {
             this.onDraw();
             this.area.patternOffset += deltaTime / 40;
+            this.point1.x = this.img.x;
+            this.point1.y = this.img.y;
+            this.point2.x = this.img.x + this.img.w;
+            this.point2.y = this.img.y + this.img.h;
             this.area.drawRect(this.point1, this.point2);
             this.layer.push();
             this.layer.rectMode(CENTER);
@@ -571,14 +632,14 @@ class Select extends Instrument
             this.layer.strokeWeight(constrain(1 / canvas.zoom.zoom, 1, 100));
             this.layer.fill(color(255, 255, 255, 100));
             let width = constrain(10 / canvas.zoom.zoom, 4, 100);
-            this.layer.rect(this.img.x, this.img.y, width);
-            this.layer.rect(this.img.x, this.img.y + this.img.h, width);
-            this.layer.rect(this.img.x + this.img.w, this.img.y, width);
-            this.layer.rect(this.img.x + this.img.w, this.img.y + this.img.h, width);
-            this.layer.rect(this.img.x, this.img.y + this.img.h / 2, width);
-            this.layer.rect(this.img.x + this.img.w / 2, this.img.y, width);
-            this.layer.rect(this.img.x + this.img.w, this.img.y + this.img.h / 2, width);
-            this.layer.rect(this.img.x + this.img.w / 2, this.img.y + this.img.h, width);
+            if(this.scalePositions.includes("LEFT-TOP")) this.layer.rect(this.img.x, this.img.y, width);
+            if(this.scalePositions.includes("LEFT-BOTTOM")) this.layer.rect(this.img.x, this.img.y + this.img.h, width);
+            if(this.scalePositions.includes("RIGHT-TOP")) this.layer.rect(this.img.x + this.img.w, this.img.y, width);
+            if(this.scalePositions.includes("RIGHT-BOTTOM")) this.layer.rect(this.img.x + this.img.w, this.img.y + this.img.h, width);
+            if(this.scalePositions.includes("LEFT-CENTER")) this.layer.rect(this.img.x, this.img.y + this.img.h / 2, width);
+            if(this.scalePositions.includes("TOP-CENTER")) this.layer.rect(this.img.x + this.img.w / 2, this.img.y, width);
+            if(this.scalePositions.includes("RIGHT-CENTER")) this.layer.rect(this.img.x + this.img.w, this.img.y + this.img.h / 2, width);
+            if(this.scalePositions.includes("BOTTOM-CENTER")) this.layer.rect(this.img.x + this.img.w / 2, this.img.y + this.img.h, width);
             this.layer.pop();
         }
     }
@@ -588,24 +649,35 @@ class SelectImage extends Select
 {
     onSelect()
     {
+        this.onSelectCalled = true;
         this.img = new Img(this.point1, this.point2, canvas.canvas);
+        if(this.isTransparent) this.img.replaceColor(canvas.color, transparent);
         let img = new Img(this.point1, this.point2, this.color);
         img.draw(canvas.canvas, this.point1, this.point2);
     }
 
     onDeselect()
     {
+        this.onDeselectCalled = true;
         this.img.draw(canvas.canvas, this.point1, this.point2);
     }
 
     onFlip(axis)
     {
+        this.onFlipCalled = true;
         this.img.flip(axis);
     }
 
     onDraw()
     {
         this.img.draw(this.layer, this.point1, this.point2);
+    }
+
+    useData(instrumentData)
+    {
+        instrumentData.color = new Color(instrumentData.color.r, instrumentData.color.g, instrumentData.color.b, instrumentData.color.a);
+        this.applyData(instrumentData);
+        this.use(instrumentData.data);
     }
 }
 
@@ -614,14 +686,11 @@ class Text extends Select
     constructor(name, layer, color = black, bold = false, italic = false, fontSize = 14, font = "Arial")
     {
         super(name, layer);
-        this.style = NORMAL;
-        if(bold && italic) this.style = BOLDITALIC;
-        else if(bold) this.style = BOLD;
-        else if(italic) this.style = ITALIC;
-        this.fontSize = fontSize;
-        this.fontColor = color;
-        this.font = font;
+
+        this.deselected = false;
+
         this.movePositions = ["LEFT", "RIGHT", "TOP", "BOTTOM"];
+        this.scalePositions = [];
         this.textArea = createElement("textarea");
         canvas.addLayer(this.textArea);
         this.textArea.style("background: transparent");
@@ -629,13 +698,57 @@ class Text extends Select
         this.textArea.style("outline: none");
         this.textArea.style("resize: none");
         this.textArea.style("overflow: hidden");
-        this.textArea.style("font-size", fontSize);
-        this.textArea.style("font-family", font);
-        this.textArea.style("color: " + this.fontColor.stringify());
-        this.textArea.style("font-style:", italic ? "italic" : "normal");
-        this.textArea.style("font-weight:", bold ? "bold" : "normal");
+        this.textArea.style("line-height: 1.2");
+        
+        this.setTextStyle(this.textArea, color, bold, italic, fontSize, font);
+
         this.textArea.hide();
+
+        this.div = createDiv();
+        this.pDiv = createDiv();
+        this.pDiv.style("overflow: hidden; width: 0px; height: 0px");
+        this.div.parent(this.pDiv);
+        this.div.style("background: transparent; width: fit-content; height: fit-content; line-height: 1.2");
+        this.setTextStyle(this.div, color, bold, italic, fontSize, font);
+        this.div.style("color: transparent");
+
+        this.minWidth = this.fontSize * 5;
+        this.minHeight = parseFloat(this.textArea.style("line-height")) + parseFloat(this.textArea.style("padding")) * 2;
     }
+
+    setTextStyle(element, color, bold, italic, fontSize, font)
+    {
+        this.style = NORMAL;
+        if(bold && italic) this.style = BOLDITALIC;
+        else if(bold) this.style = BOLD;
+        else if(italic) this.style = ITALIC;
+        this.fontSize = fontSize;
+        this.fontColor = color;
+        this.font = font;
+
+        element.style("font-size", fontSize);
+        element.style("font-family", font);
+        element.style("color: " + color.stringify());
+        element.style("font-style:", italic ? "italic" : "normal");
+        element.style("font-weight:", bold ? "bold" : "normal");
+    }
+
+    mouseReleased()
+    {
+        if(!this.selected)
+        {
+            this.selected = true;
+            this.point2 = createVector(this.point1.x + this.minWidth, this.point1.y + this.minHeight);
+            if(this.deselected)
+            {
+                this.selected = false;
+                this.deselected = false;
+            }
+            else this.onSelect();
+        }
+    }
+
+    use(){}
 
     onSelect()
     {
@@ -645,6 +758,7 @@ class Text extends Select
 
     onDeselect()
     {
+        this.deselected = true;
         push();
         textSize(this.fontSize);
         textFont(this.font);
@@ -659,14 +773,11 @@ class Text extends Select
         let dh = 0;
         for(let i = 0; i <= content.length; i++)
         {
-            let wrap = false;
-            if(textWidth(line.slice(line.lastIndexOf(" "))) > this.img.w - dx * 2) wrap = true;
-            if(i == content.length || content[i] == "\n" || wrap)
+            if(content[i] == "\n" || i == content.length)
             {
                 text(line, this.img.x + dx, this.img.y + dy + dh, this.img.w, this.img.h - dh);
-                dh += this.fontSize;
+                dh += parseFloat(this.textArea.style("line-height"));
                 line = "";
-                if(wrap && i < content.length) line += content[i];
             }
             else line += content[i];
         }
@@ -678,11 +789,112 @@ class Text extends Select
     onDraw()
     {
         super.onDraw();
+        this.div.html(this.textArea.value().replaceAll("\n", "W<br>") + "W");
         this.textArea.position(this.img.x, this.img.y);
-        let h = this.textArea.elt.scrollHeight >= this.textArea.elt.clientHeight ? this.textArea.elt.scrollHeight : this.img.h;
-        h = Math.max(h, this.img.h);
-        h = this.img.h;
-        this.textArea.size(this.img.w, h);
+        let w = this.div.elt.clientWidth;
+        let h = this.div.elt.clientHeight + parseFloat(this.textArea.style("padding")) * 2;
+        h = Math.max(h, this.minHeight);
+        w = Math.max(w, this.minWidth);
+        this.img.w = w;
+        this.img.h = h;
+        this.textArea.size(this.img.w, this.img.h);
+    }
+}
+
+class Primitive extends Instrument
+{
+    constructor(name, thickness = new Thickness(1, 1), color = black)
+    {
+        super(name, thickness, color);
+        this.drawnPoints = 0;
+        this.points = [];
+    }
+
+    onDone(){}
+    onDraw(){}
+
+    mousePressed()
+    {
+        let mouse = canvas.getMouse();
+        this.points[this.drawnPoints] = createVector(mouse.x, mouse.y);
+        this.drawnPoints++;
+        if(this.drawnPoints == this.points.length)
+        {
+            this.drawnPoints = 0;
+            this.onDone();
+        }
+    }
+
+    use(){}
+
+    drawEachFrame()
+    {
+        canvas.outerLayer.push();
+        canvas.outerLayer.fill(color(255, 255, 255, 0));
+        canvas.outerLayer.stroke(color(this.color.r, this.color.g, this.color.b, this.color.a));
+        canvas.outerLayer.strokeCap(ROUND);
+        canvas.outerLayer.strokeWeight(this.thickness);
+        this.onDraw();
+        canvas.outerLayer.pop();
+    }
+}
+
+class Line extends Primitive
+{
+    constructor(name, thickness = new Thickness(1, 1), color = black)
+    {
+        super(name, thickness, color);
+        this.points = [createVector(0, 0), createVector(0, 0)];
+    }
+
+    onDraw()
+    {
+        if(this.drawnPoints == 1)
+        {
+            let mouse = canvas.getMouse();
+            canvas.outerLayer.line(this.points[this.drawnPoints - 1].x, this.points[this.drawnPoints - 1].y, mouse.x, mouse.y);
+        }
+    }
+
+    onDone()
+    {
+        canvas.setInstrument("SelectImage");
+        let i1 = this.points[0].x < this.points[1].x ? -1 : 1;
+        this.points[0].x += i1 * this.thickness;
+        this.points[1].x += -i1 * this.thickness;
+        i1 = this.points[0].y < this.points[1].y ? -1 : 1;
+        this.points[0].y += i1 * this.thickness;
+        this.points[1].y += -i1 * this.thickness;
+        canvas.instrument.img = new Img(this.points[0], this.points[1], canvas.outerLayer);
+        canvas.instrument.point1 = this.points[0];
+        canvas.instrument.point2 = this.points[1];
+        canvas.instrument.selected = true;
+    }
+}
+
+class Rect extends Line
+{
+    onDraw()
+    {
+        if(this.drawnPoints == 1)
+        {
+            canvas.outerLayer.rectMode(CORNERS);
+            let mouse = canvas.getMouse();
+            canvas.outerLayer.rect(this.points[this.drawnPoints - 1].x, this.points[this.drawnPoints - 1].y, mouse.x, mouse.y);
+        }
+    }
+}
+
+class Ellipse extends Line
+{
+    onDraw()
+    {
+        if(this.drawnPoints == 1)
+        {
+            canvas.outerLayer.ellipseMode(CORNERS);
+            let mouse = canvas.getMouse();
+            canvas.outerLayer.ellipse(this.points[this.drawnPoints - 1].x, this.points[this.drawnPoints - 1].y, mouse.x, mouse.y);
+        }
     }
 }
 
@@ -731,7 +943,7 @@ class DashedLine
         this.pattern = pattern;
         this.calculatePatternOffset(patternOffset);
     }
-    
+
     calculatePatternOffset(patternOffset)
     {
         let length = this.pattern.getLength();

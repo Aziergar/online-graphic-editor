@@ -8,6 +8,12 @@ function setup()
             canvas.setInstrument(button.id);
         });
     });
+    document.addEventListener("copy", copyFunction);
+    document.addEventListener("paste", pasteFunction);
+    document.getElementById("Download").addEventListener("click", () =>
+    {
+        saveCanvas(canvas.canvas, createFileName(), "png");
+    });
 }
 
 function draw()
@@ -16,7 +22,25 @@ function draw()
     if (canvas.drawCheck())
     {
         canvas.drawn = true;
-        canvas.instrument.use();
+        let sendData = canvas.instrument.use();
+        chatSocket.send(JSON.stringify({
+            type: "edit_canvas",
+            data: sendData,
+            username: username,
+        }));
+    }
+    while(drawData.length > 0)
+    {
+        let instrument;
+        let data = JSON.parse(drawData.shift());
+        if(data.username != null)
+        {
+            let instrument = canvas.dataInstruments.find(element => element.name == data.name && element.username == data.username);
+            if(!instrument) canvas.dataInstruments.push(data.name == "SelectImage" ? new SelectImage("SelectImage", canvas.onlineLayer) : new Text("Text", canvas.onlineLayer));
+            canvas.dataInstruments[canvas.dataInstruments.length - 1].username = data.username;
+        }
+        else instrument = canvas.dataInstruments.find(element => element.name == data.name);
+        instrument.useData(data);
     }
 
     canvas.instrument.drawEachFrame();

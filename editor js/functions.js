@@ -141,6 +141,29 @@ class Img
         this.h = rect.h;
     }
 
+    replaceColor(color1, color2)
+    {
+        this.img.loadPixels();
+            for(let i = 0; i < this.img.height; i++)
+            {
+                for(let j = 0; j < this.img.width; j++)
+                {
+                    let index = (i * this.img.width + j) * 4;
+                    if(this.img.pixels[index    ] == color1.r
+                    && this.img.pixels[index + 1] == color1.g
+                    && this.img.pixels[index + 2] == color1.b
+                    && this.img.pixels[index + 3] == color1.a)
+                    {
+                        this.img.pixels[index    ] = color2.r;
+                        this.img.pixels[index + 1] = color2.g;
+                        this.img.pixels[index + 2] = color2.b;
+                        this.img.pixels[index + 3] = color2.a;
+                    }
+                }
+            }
+        this.img.updatePixels();
+    }
+
     setColor(color)
     {
         this.img.loadPixels();
@@ -160,14 +183,14 @@ class Img
 
     getRect(x, y, w, h)
     {
-        if(!x)
+        if(x == null)
         {
             x = this.x;
             y = this.y;
             w = this.w;
             h = this.h;
         }
-        if(!h)
+        if(h == null)
         {
             w = y.x - x.x;
             h = y.y - x.y;
@@ -332,4 +355,67 @@ class Img
         }
         return null;
     }
+}
+
+function copyFunction(event)
+{
+    if(!canvas.instrument.name == "SelectImage") return;
+    if(!canvas.instrument.selected) return;
+    let img = createGraphics(canvas.instrument.img.w, canvas.instrument.img.h);
+    img.image(canvas.instrument.img.img, 0, 0, canvas.instrument.img.w, canvas.instrument.img.h);
+    let url = img.elt.toDataURL();
+    img.remove();
+    event.clipboardData.setData("Text", url);
+    event.preventDefault();
+}
+
+function pasteFunction(event)
+{
+    let url = null;
+    if(event.clipboardData.types.indexOf("text/plain") != -1 && event.clipboardData.getData("text/plain").startsWith("data:image/png;base64,"))
+    {
+        url = event.clipboardData.getData("text/plain");
+    }
+    else if(event.clipboardData.files.length == 0
+        || (!event.clipboardData.files[0].name.endsWith(".png")
+        && !event.clipboardData.files[0].name.endsWith(".jpg")
+        && !event.clipboardData.files[0].name.endsWith(".jpeg"))) return;
+
+    canvas.setInstrument("SelectImage");
+    let x = (canvas.canvasParent.parent().getBoundingClientRect().left - canvas.canvasParent.elt.getBoundingClientRect().left) / canvas.zoom.zoom;
+    let y = (canvas.canvasParent.parent().getBoundingClientRect().top - canvas.canvasParent.elt.getBoundingClientRect().top) / canvas.zoom.zoom;
+    x = Math.max(x, 0);
+    y = Math.max(y, 0);
+    if(canvas.instrument.img) canvas.instrument.onDeselect();
+    canvas.instrument.img = new Img(x, y, 1, 1, canvas.canvas);
+
+    function pasteImage()
+    {
+        loadImage(url, img => 
+        {
+            canvas.instrument.img.img = img;
+            canvas.instrument.point1 = createVector(x, y);
+            canvas.instrument.point2 = createVector(x + img.width / pixelDensity(), y + img.height / pixelDensity());
+            canvas.instrument.selected = true;
+        });
+    }
+
+    if(!url)
+    {
+        let reader = new FileReader();
+        url = "";
+        reader.onload = function(e) {
+            url = reader.result;
+            pasteImage();
+        }
+        reader.readAsDataURL(event.clipboardData.items[0].getAsFile());
+    }
+    else pasteImage();
+
+    event.preventDefault();
+}
+
+function createFileName()
+{
+    return new Date().toString().replaceAll(/(\:|\+)/g, "_");
 }
