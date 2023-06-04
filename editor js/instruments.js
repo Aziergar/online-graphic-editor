@@ -485,7 +485,6 @@ class Select extends Instrument
         this.scalePositions = ["LEFT-CENTER", "RIGHT-CENTER", "TOP-CENTER", "BOTTOM-CENTER", "LEFT-TOP", "RIGHT-TOP", "LEFT-BOTTOM", "RIGHT-BOTTOM"];
         this.onSelectCalled = false;
         this.onDeselectCalled = false;
-        this.onSelectCalled = false;
         this.onFlipCalled = false;
     }
 
@@ -604,12 +603,12 @@ class Select extends Instrument
         }
         this.username = username;
         let layer = this.layer;
-        let img = this.img;
+        let area = this.area;
+        this.area = null;
         this.layer = null;
-        this.img = {x : img.x, y : img.y, w : img.w, h : img.h};
         let data = JSON.stringify(this);
         this.layer = layer;
-        this.img = img;
+        this.area = area;
         this.onSelectCalled = false;
         this.onDeselectCalled = false;
         this.onFlipCalled = false;
